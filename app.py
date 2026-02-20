@@ -1,11 +1,12 @@
 import streamlit as st
 import cv2
 import numpy as np
+from streamlit_image_coordinates import streamlit_image_coordinates
 
 def app():
     st.set_page_config(layout="wide", page_title="Peritaje de Precisión")
-    st.title("⚖️ Analizador de Incapacidad Campimétrica")
-    st.write("Ajustá la red geométrica sobre el centro del informe para un cálculo real.")
+    st.title("⚖️ Analizador de Incapacidad (Centrado por Clic)")
+    st.write("Hacé **clic** directamente en la cruz central del informe para posicionar la red.")
 
     img_file = st.file_uploader("Subir Campo Visual", type=['jpg', 'png', 'jpeg'])
 
@@ -14,13 +15,23 @@ def app():
         img = cv2.imdecode(file_bytes, 1)
         h, w = img.shape[:2]
 
+        # 1. Capturar el clic en la imagen
+        # Mostramos la imagen y guardamos donde el usuario hace clic
+        value = streamlit_image_coordinates(img, key="pil")
+
+        # Centro por defecto o el que el usuario elija con el clic
+        if value:
+            cx, cy = value["x"], value["y"]
+        else:
+            cx, cy = w // 2, h // 2
+
         # --- PANEL DE CONTROL LATERAL ---
-        st.sidebar.header("🕹️ Control de Posición")
-        # Estos sliders permiten mover el centro pixel por pixel
-        cx = st.sidebar.slider("Posición Centro X", 0, w, w//2)
-        cy = st.sidebar.slider("Posición Centro Y", 0, h, h//2)
+        st.sidebar.header("📏 Calibración Final")
+        # Ajuste fino por si el clic no fue perfecto
+        adj_x = st.sidebar.slider("Ajuste fino X", -50, 50, 0)
+        adj_y = st.sidebar.slider("Ajuste fino Y", -50, 50, 0)
+        cx, cy = cx + adj_x, cy + adj_y
         
-        st.sidebar.header("📏 Calibración")
         escala = st.sidebar.slider("Escala de la Red", 50, w//2, w//4)
         fn_input = st.sidebar.text_input("Falsos Negativos (ej. 0/7)", "0/7")
 
@@ -30,8 +41,7 @@ def app():
         
         img_viz = img.copy()
         
-        # Red geométrica: 8 bisectrices y círculos de 10°, 20°, 30°, 60°
-        # El radio_max se ajusta con el slider de escala
+        # Red geométrica: 8 bisectrices y círculos (10°, 20°, 30°, 60°)
         radios = [escala * 0.16, escala * 0.33, escala * 0.5, escala]
         angulos = np.linspace(0, 315, 8)
         sectores_fallados = 0
@@ -44,19 +54,18 @@ def app():
                 if r_int > 0:
                     cv2.circle(mask, (cx, cy), int(r_int), 0, -1)
                 
-                # Si el sector tiene un cuadrado negro (blanco en binaria)
                 overlap = cv2.bitwise_and(binaria, mask)
-                if np.sum(overlap) > 400: # Umbral de detección
+                if np.sum(overlap) > 400: # Sensibilidad
                     sectores_fallados += 1
                     cv2.ellipse(img_viz, (cx, cy), (int(r_ext), int(r_ext)), 0, alpha, alpha + 45, (0, 0, 255), 2)
                 else:
                     cv2.ellipse(img_viz, (cx, cy), (int(r_ext), int(r_ext)), 0, alpha, alpha + 45, (0, 255, 0), 1)
 
-        # Dibujar Cruz de Centrado
-        cv2.line(img_viz, (cx-20, cy), (cx+20, cy), (255, 0, 0), 2)
-        cv2.line(img_viz, (cx, cy-20), (cx, cy+20), (255, 0, 0), 2)
+        # Dibujar Mira de confirmación
+        cv2.drawMarker(img_viz, (cx, cy), (255, 0, 0), markerType=cv2.MARKER_CROSS, markerSize=30, thickness=2)
 
-        st.image(img_viz, use_container_width=True)
+        # Mostramos el resultado con la red superpuesta
+        st.image(img_viz, use_container_width=True, caption="Red geométrica calculada sobre el punto de interés")
 
         # --- CÁLCULO FINAL ---
         try:
@@ -68,10 +77,10 @@ def app():
         incapacidad = ((grados_totales / 320) * 100) * 0.25
 
         st.divider()
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Sectores Detectados", sectores_fallados)
-        col2.metric("Grados Totales", f"{round(grados_totales, 1)}°")
-        col3.metric("Incapacidad Final", f"{round(incapacidad, 2)}%")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Sectores Afectados", sectores_fallados)
+        c2.metric("Suma de Grados", f"{round(grados_totales, 1)}°")
+        c3.metric("Incapacidad Baremo", f"{round(incapacidad, 2)}%")
 
 if __name__ == "__main__":
     app()
