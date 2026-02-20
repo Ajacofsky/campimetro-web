@@ -23,13 +23,13 @@ if img_file is not None:
     img_viz = img.copy()
     total_grados = 0
 for i in range(6):
-    r_ext = (i + 1) * radio_10
-    r_int = i * radio_10
-for a_idx in range(8):
-    alpha = a_idx * 45
-    mask = np.zeros((h, w), dtype=np.uint8)
-    cv2.ellipse(mask, (cx, cy), (int(r_ext), int(r_ext)), 0, alpha, alpha + 45, 255, -1)
-    cv2.circle(mask, (cx, cy), int(r_int), 0, -1)
+        r_ext = (i + 1) * radio_10
+        r_int = i * radio_10
+        for a_idx in range(8):
+        alpha = a_idx * 45
+        mask = np.zeros((h, w), dtype=np.uint8)
+        cv2.ellipse(mask, (cx, cy), (int(r_ext), int(r_ext)), 0, alpha, alpha + 45, 255, -1)
+        cv2.circle(mask, (cx, cy), int(r_int), 0, -1)
 if i < 5:
     area_n = np.count_nonzero(cv2.bitwise_and(binaria, mask))
     area_t = np.count_nonzero(mask)
