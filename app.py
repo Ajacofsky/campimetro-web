@@ -9,11 +9,15 @@ def analizar_campo(imagen_file):
     img = cv2.imdecode(file_bytes, 1)
     gris = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     
-    # Suavizado leve para no borrar puntos pequeños
-    suave = cv2.GaussianBlur(gris, (3, 3), 0)
+    # 1. Filtro para limpiar puntos aislados (ruido)
+    suave = cv2.medianBlur(gris, 5)
     
-    # Umbralización (Lo que se ve negro pasa a blanco)
-    _, binaria = cv2.threshold(suave, 120, 255, cv2.THRESH_BINARY_INV)
+    # 2. Umbralización fuerte
+    _, binaria = cv2.threshold(suave, 100, 255, cv2.THRESH_BINARY_INV)
+    
+    # 3. Operación Morfológica: Une puntos cercanos y limpia motas de polvo
+    kernel = np.ones((3,3), np.uint8)
+    binaria = cv2.morphologyEx(binaria, cv2.MORPH_CLOSE, kernel)
     
     contornos, _ = cv2.findContours(binaria, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     puntos = 0
@@ -23,9 +27,10 @@ def analizar_campo(imagen_file):
         x, y, w, h = cv2.boundingRect(c)
         proporcion = float(w)/h
         
-        # AJUSTE: Bajamos el área mínima a 10 para capturar esos puntos
-        # y permitimos una forma un poco más libre (proporción 0.5 a 1.5)
-        if 10 < area < 1200 and 0.5 < proporcion < 1.5:
+        # FILTRO DE PRECISIÓN:
+        # Los escotomas en tu imagen tienen un área de entre 60 y 400 píxeles.
+        # El texto y el ruido suelen ser menores a 50 o muy alargados.
+        if 60 < area < 500 and 0.7 < proporcion < 1.3:
             puntos += 1
             
     return binaria, puntos
@@ -35,7 +40,6 @@ def calcular_resultado_final(puntos, fn_str):
     try:
         if "/" in fn_str:
             num, den = map(float, fn_str.split('/'))
-            # Factor: (Falsos Negativos / Total) + 1
             factor = (num / den) + 1 if den > 0 else 1
         else:
             factor = 1
@@ -50,27 +54,25 @@ def calcular_resultado_final(puntos, fn_str):
     
     return round(grados_finales, 1), round(porcentaje_perdida, 2), round(incapacidad_final, 2)
 
-st.set_page_config(page_title="Peritaje Campimétrico", layout="wide")
+# --- Interfaz ---
+st.set_page_config(page_title="Peritaje", layout="wide")
 st.title("⚖️ Analizador de Incapacidad Campimétrica")
 
-img_file = st.file_uploader("Subir Campo Visual", type=['png', 'jpg', 'jpeg'])
-fn_input = st.text_input("Falsos Negativos (ejemplo: 1/8)", value="0/8")
+img_file = st.file_uploader("Subir imagen", type=['png', 'jpg', 'jpeg'])
+fn_input = st.text_input("Falsos Negativos", value="0/8")
 
-if st.button("CALCULAR AHORA"):
+if st.button("CALCULAR"):
     if img_file:
         img_bin, n_puntos = analizar_campo(img_file)
-        
         st.subheader("Vista de Diagnóstico")
-        st.image(img_bin, caption=f"Análisis visual: {n_puntos} sectores detectados", width=500)
+        st.image(img_bin, caption=f"Sectores reales detectados: {n_puntos}", width=500)
         
         deg, perd, inc = calcular_resultado_final(n_puntos, fn_input)
         
         st.divider()
         c1, c2, c3 = st.columns(3)
-        c1.metric("Puntos Detectados", n_puntos)
-        c2.metric("Suma de Grados", f"{deg}°")
-        c3.metric("Incapacidad Final", f"{inc}%")
-        
-        st.info(f"Lógica aplicada: ({n_puntos} pts * 10°) * factor FN {fn_input} = {deg}°. Incapacidad = {perd}% de pérdida visual * 0.25 de coeficiente.")
+        c1.metric("Escotomas (10°)", n_puntos)
+        c2.metric("Grados Totales", f"{deg}°")
+        c3.metric("Incapacidad", f"{inc}%")
     else:
-        st.warning("Por favor, cargá una imagen.")
+        st.warning("Cargá una imagen.")
