@@ -78,7 +78,29 @@ else:
     img = st.file_uploader("Cargar Campo Visual", type=['png', 'jpg', 'jpeg'])
     fn = st.text_input("Falsos Negativos (ej. 0/8)", value="0/8")
     
-    if st.button("CALCULAR INCAPACIDAD"):
-        puntos = analizar_campo(img)
+   if st.button("CALCULAR INCAPACIDAD"):
+        # Procesamiento
+        file_bytes = np.asarray(bytearray(img.read()), dtype=np.uint8)
+        opencv_img = cv2.imdecode(file_bytes, 1)
+        gris = cv2.cvtColor(opencv_img, cv2.COLOR_BGR2GRAY)
+        
+        # Umbralización para diagnóstico
+        _, binaria = cv2.threshold(gris, 127, 255, cv2.THRESH_BINARY_INV)
+        
+        # MOSTRAR AL USUARIO LO QUE VE LA APP
+        st.subheader("Vista de Diagnóstico (Lo que la App analiza)")
+        st.image(binaria, caption="Las zonas BLANCAS aquí son lo que la App cuenta como escotomas", width=400)
+        
+        # Conteo
+        contornos, _ = cv2.findContours(binaria, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        puntos = 0
+        for c in contornos:
+            x, y, w, h = cv2.boundingRect(c)
+            area = cv2.contourArea(c)
+            if 10 < area < 500: # Ajustamos el tamaño para no contar el fondo
+                puntos += 1
+        
         g, p, inc = calcular_incapacidad(puntos, fn)
-        st.success(f"Resultado: {inc}% de incapacidad.")
+        st.divider()
+        st.metric("Puntos Detectados", puntos)
+        st.success(f"Resultado Final: {inc}% de incapacidad.")
