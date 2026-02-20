@@ -8,13 +8,14 @@ def analizar_campo(imagen_file):
     if imagen_file is None:
         return 0
     
-    # Convertir archivo subido a formato OpenCV
     file_bytes = np.asarray(bytearray(imagen_file.read()), dtype=np.uint8)
     img = cv2.imdecode(file_bytes, 1)
     gris = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     
-    # Umbral ESTRICTO para detectar formas negras
-    _, binaria = cv2.threshold(gris, 100, 255, cv2.THRESH_BINARY_INV)
+    # CAMBIO 1: Umbral adaptativo (se ajusta solo a la luz de la foto)
+    binaria = cv2.adaptiveThreshold(gris, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                    cv2.THRESH_BINARY_INV, 11, 2)
+    
     contornos, _ = cv2.findContours(binaria, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     
     puntos_no_vistos = 0
@@ -22,12 +23,12 @@ def analizar_campo(imagen_file):
         x, y, w, h = cv2.boundingRect(c)
         aspect_ratio = float(w)/h
         area = cv2.contourArea(c)
-        # Filtro geométrico: Cuadrado negro sólido (No Visto)
-        if 0.8 <= aspect_ratio <= 1.2 and area > 50:
+        
+        # CAMBIO 2: Bajamos el área mínima de 50 a 10 para detectar puntos más pequeños
+        if 0.7 <= aspect_ratio <= 1.3 and area > 10:
             puntos_no_vistos += 1
             
     return puntos_no_vistos
-
 def calcular_incapacidad(puntos, fn_str):
     try:
         num, den = map(int, fn_str.split('/'))
