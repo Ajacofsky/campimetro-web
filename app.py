@@ -8,7 +8,7 @@ st.title("Analizador de Incapacidad")
 
 img_file = st.sidebar.file_uploader("Subir Campo Visual", type=['jpg', 'png', 'jpeg'])
 
-if not img_file:
+    if not img_file:
 st.info("Sube una imagen para empezar")
 st.stop()
 
@@ -30,18 +30,18 @@ _, binaria = cv2.threshold(gris, umbral_negro, 255, cv2.THRESH_BINARY_INV)
 img_viz = img.copy()
 total_grados = 0
 
-for i in range(6):
+    for i in range(6):
 r_ext = (i + 1) * radio_10
 r_int = i * radio_10
-for a_idx in range(8):
+    for a_idx in range(8):
 alpha = a_idx * 45
 mask = np.zeros((h, w), dtype=np.uint8)
 cv2.ellipse(mask, (cx, cy), (int(r_ext), int(r_ext)), 0, alpha, alpha + 45, 255, -1)
 cv2.circle(mask, (cx, cy), int(r_int), 0, -1)
-if i < 5:
+    if i < 5:
 a_n = np.count_nonzero(cv2.bitwise_and(binaria, mask))
 a_t = np.count_nonzero(mask)
-if a_t > 0 and (a_n / a_t) > 0.04:
+    if a_t > 0 and (a_n / a_t) > 0.04:
 puntos = 10 if (a_n / a_t) >= 0.70 else 5
 total_grados += puntos
 color = (0, 0, 255) if puntos == 10 else (0, 165, 255)
