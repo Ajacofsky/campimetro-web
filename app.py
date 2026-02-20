@@ -21,9 +21,10 @@ if img_file is not None:
     radio_10 = st.sidebar.slider("Pixeles por cada 10°", 10, 200, 55)
     umbral = st.sidebar.slider("Umbral de Negros", 50, 255, 110)
     
+    # Procesamiento
     gris = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     _, binaria = cv2.threshold(gris, umbral, 255, cv2.THRESH_BINARY_INV)
-    img_viz = img.copy()
+    img_final = img.copy()
     total_grados = 0
     
     for i in range(6):
@@ -42,3 +43,27 @@ if img_file is not None:
                     puntos = 10 if (a_n / a_t) >= 0.60 else 5
                     total_grados += puntos
                     color = (0, 0, 255) if puntos == 10 else (0, 165, 255)
+                    overlay = img_final.copy()
+                    cv2.ellipse(overlay, (cx, cy), (int(r_ext), int(r_ext)), 0, alpha, alpha + 45, color, -1)
+                    cv2.circle(overlay, (cx, cy), int(r_int), (0,0,0), -1)
+                    img_final = cv2.addWeighted(overlay, 0.4, img_final, 0.6, 0)
+            
+            cv2.ellipse(img_final, (cx, cy), (int(r_ext), int(r_ext)), 0, alpha, alpha + 45, (180, 180, 180), 1)
+
+    cv2.drawMarker(img_final, (cx, cy), (255, 0, 0), cv2.MARKER_CROSS, 30, 2)
+    
+    # IMPORTANTE: Convertir a RGB para que Streamlit la muestre bien
+    img_rgb = cv2.cvtColor(img_final, cv2.COLOR_BGR2RGB)
+    
+    # CÁLCULOS
+    perdida = (total_grados / 320) * 100
+    incapacidad = perdida * 0.25
+    
+    # MOSTRAR RESULTADOS ARRIBA PARA ASEGURAR VISIBILIDAD
+    st.markdown(f"## 📊 RESULTADOS: **Suma {total_grados}°** | **Pérdida {round(perdida, 1)}%** | **Incapacidad {round(incapacidad, 1)}%**")
+    
+    # MOSTRAR IMAGEN
+    st.image(img_rgb, caption="Resultado del Análisis de Campo Visual", use_container_width=True)
+
+else:
+    st.info("Subí la imagen para ver los resultados.")
