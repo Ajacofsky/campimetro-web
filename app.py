@@ -2,87 +2,93 @@ import streamlit as st
 import cv2
 import numpy as np
 
-def analizar_con_grilla(img_original, cx, cy, esc):
-    h, w = img_original.shape[:2]
-    img_viz = img_original.copy()
+def detectar_geometria_campo(img_gris):
+    # 1. Detectar líneas para hallar el centro
+    bordes = cv2.Canny(img_gris, 50, 150)
+    lineas = cv2.HoughLinesP(bordes, 1, np.pi/180, 100, minLineLength=100, maxLineGap=10)
     
-    # 1. Definir Centro y Radio
-    centro = (int(w * cx), int(h * cy))
-    radio_max = int(min(h, w) * 0.4 * esc)
+    centro_x, centro_y = img_gris.shape[1]//2, img_gris.shape[0]//2 # Default
     
-    # 2. Definir Geometría (8 bisectrices y 4 anillos)
-    angulos = np.linspace(0, 315, 8)
-    radios = [radio_max * 0.16, radio_max * 0.33, radio_max * 0.5, radio_max]
+    if lineas is not None:
+        horizontales = []
+        verticales = []
+        for l in lineas:
+            x1, y1, x2, y2 = l[0]
+            if abs(y1 - y2) < 5: horizontales.append(y1)
+            if abs(x1 - x2) < 5: verticales.append(x1)
+        
+        if horizontales and verticales:
+            centro_y = int(np.median(horizontales))
+            centro_x = int(np.median(verticales))
+            
+    return centro_x, centro_y
+
+def analizar_peritaje(imagen_file, fn_str):
+    file_bytes = np.asarray(bytearray(imagen_file.read()), dtype=np.uint8)
+    img = cv2.imdecode(file_bytes, 1)
+    gris = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     
-    # Pre-procesar para detección (esto ocurre por detrás)
-    gris = cv2.cvtColor(img_original, cv2.COLOR_BGR2GRAY)
+    # Detección automática del centro
+    cx, cy = detectar_geometria_campo(gris)
+    
+    # Umbralización para ver los escotomas
     _, binaria = cv2.threshold(gris, 110, 255, cv2.THRESH_BINARY_INV)
     
-    sectores_fallados = 0
+    # Definir radios basados en la escala estándar del informe (estimación inicial)
+    # Se puede ajustar si el informe es de 30 o 60 grados
+    radio_max = int(img.shape[1] * 0.35)
+    radios = [radio_max * 0.16, radio_max * 0.33, radio_max * 0.5, radio_max]
+    angulos = np.linspace(0, 315, 8)
     
-    # 3. Dibujar Red y Detectar en tiempo real
-    for i in range(len(radios)):
+    sectores_fallados = 0
+    img_viz = img.copy()
+    
+    for i, r_ext in enumerate(radios):
         r_int = 0 if i == 0 else radios[i-1]
-        r_ext = radios[i]
         for alpha in angulos:
-            # Máscara del sector
             mask = np.zeros(gris.shape, dtype=np.uint8)
-            cv2.ellipse(mask, centro, (int(r_ext), int(r_ext)), 0, alpha, alpha + 45, 255, -1)
+            cv2.ellipse(mask, (cx, cy), (int(r_ext), int(r_ext)), 0, alpha, alpha + 45, 255, -1)
             if r_int > 0:
-                cv2.circle(mask, centro, int(r_int), 0, -1)
+                cv2.circle(mask, (cx, cy), int(r_int), 0, -1)
             
-            # Detección
             overlap = cv2.bitwise_and(binaria, mask)
-            if np.sum(overlap) > 400: # Sensibilidad del sector
+            if np.sum(overlap) > 500: # Presencia de cuadrado negro
                 sectores_fallados += 1
-                color = (0, 0, 255) # Rojo si está afectado
+                cv2.ellipse(img_viz, (cx, cy), (int(r_ext), int(r_ext)), 0, alpha, alpha + 45, (0, 0, 255), 2)
             else:
-                color = (0, 255, 0) # Verde si está libre
-            
-            # Dibujar sector en la previsualización
-            cv2.ellipse(img_viz, centro, (int(r_ext), int(r_ext)), 0, alpha, alpha + 45, color, 1)
+                cv2.ellipse(img_viz, (cx, cy), (int(r_ext), int(r_ext)), 0, alpha, alpha + 45, (0, 255, 0), 1)
 
-    # Dibujar ejes centrales
-    cv2.line(img_viz, (centro[0]-20, centro[1]), (centro[0]+20, centro[1]), (255,0,0), 2)
-    cv2.line(img_viz, (centro[0], centro[1]-20), (centro[0], centro[1]+20), (255,0,0), 2)
+    # Dibujar ejes detectados
+    cv2.line(img_viz, (cx-50, cy), (cx+50, cy), (255, 0, 0), 2)
+    cv2.line(img_viz, (cx, cy-50), (cx, cy+50), (255, 0, 0), 2)
                 
     return img_viz, sectores_fallados
 
-# --- Interfaz de Streamlit ---
+# --- Interfaz ---
 st.set_page_config(layout="wide")
-st.title("Analizador de Incapacidad Campimétrica")
+st.title("⚖️ Analizador de Incapacidad (Centrado Automático)")
 
-img_file = st.file_uploader("Subir imagen", type=['jpg', 'png', 'jpeg'])
+img_file = st.file_uploader("Subir Campo Visual", type=['jpg', 'png', 'jpeg'])
 
 if img_file:
-    # Convertir a formato OpenCV
-    file_bytes = np.asarray(bytearray(img_file.read()), dtype=np.uint8)
-    img_original = cv2.imdecode(file_bytes, 1)
-    
-    # Sidebar con sliders que disparan el cambio inmediato
-    st.sidebar.header("Ajuste de Precisión")
-    cx = st.sidebar.slider("Posición X", 0.0, 1.0, 0.5, 0.01)
-    cy = st.sidebar.slider("Posición Y", 0.0, 1.0, 0.5, 0.01)
-    esc = st.sidebar.slider("Escala", 0.1, 2.0, 1.0, 0.05)
     fn = st.sidebar.text_input("Falsos Negativos", "0/8")
     
-    # PROCESAMIENTO EN TIEMPO REAL
-    img_resultado, n_sectores = analizar_con_grilla(img_original, cx, cy, esc)
+    # Procesar con detección de ejes
+    img_res, n_sectores = analizar_peritaje(img_file, fn)
     
-    # Mostrar imagen principal
-    st.image(img_resultado, use_container_width=True)
+    st.image(img_res, use_container_width=True)
     
-    # Cálculos matemáticos (Suma de 320°)
+    # Cálculo Final
     try:
         num, den = map(float, fn.split('/'))
         factor = (num/den) + 1 if den > 0 else 1
     except: factor = 1
     
-    grados_finales = min((n_sectores * 10) * factor, 320)
-    inc_final = ((grados_finales / 320) * 100) * 0.25
+    grados = min((n_sectores * 10) * factor, 320)
+    incapacidad = ((grados / 320) * 100) * 0.25
     
-    # Métricas
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Sectores Afectados", n_sectores)
-    c2.metric("Suma Grados", f"{round(grados_finales, 1)}°")
-    c3.metric("Incapacidad Baremo", f"{round(inc_final, 2)}%")
+    st.divider()
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Sectores Afectados", n_sectores)
+    col2.metric("Suma de Grados", f"{round(grados, 1)}°")
+    col3.metric("Incapacidad Final", f"{round(incapacidad, 2)}%")
